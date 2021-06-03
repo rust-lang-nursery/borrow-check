@@ -19,7 +19,7 @@ struct Facts {
     loan_killed_at: BTreeSet<(Loan, Point)>,
     subset_base: BTreeSet<(Origin, Origin, Point)>,
     loan_invalidated_at: BTreeSet<(Point, Loan)>,
-    known_subset: BTreeSet<(Origin, Origin)>,
+    known_placeholder_subset: BTreeSet<(Origin, Origin)>,
     placeholder: BTreeSet<(Origin, Loan)>,
     var_defined_at: BTreeSet<(Variable, Point)>,
     var_used_at: BTreeSet<(Variable, Point)>,
@@ -52,7 +52,7 @@ impl From<Facts> for AllFacts {
             path_assigned_at_base: facts.path_assigned_at_base.into_iter().collect(),
             path_moved_at_base: facts.path_moved_at_base.into_iter().collect(),
             path_accessed_at_base: facts.path_accessed_at_base.into_iter().collect(),
-            known_subset: facts.known_subset.into_iter().collect(),
+            known_placeholder_subset: facts.known_placeholder_subset.into_iter().collect(),
             placeholder: facts.placeholder.into_iter().collect(),
         }
     }
@@ -113,8 +113,8 @@ pub(crate) fn parse_from_program(
                 }),
         );
 
-    // facts: known_subset(Origin, Origin)
-    facts.known_subset.extend(
+    // facts: known_placeholder_subset(Origin, Origin)
+    facts.known_placeholder_subset.extend(
         input
             .known_subsets
             .iter()

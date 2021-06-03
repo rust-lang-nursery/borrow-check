@@ -82,7 +82,7 @@ pub struct AllFacts<T: FactTypes> {
     /// - and one for the `'a: 'c` implied bound from the `x` parameter,
     /// (note that the transitive relation `'b: 'c` is not necessarily included
     /// explicitly, but rather inferred by polonius).
-    pub known_subset: Vec<(T::Origin, T::Origin)>,
+    pub known_placeholder_subset: Vec<(T::Origin, T::Origin)>,
 
     /// `placeholder(origin, loan)` describes a placeholder `origin`, with its associated
     ///  placeholder `loan`.
@@ -108,7 +108,7 @@ impl<T: FactTypes> Default for AllFacts<T> {
             path_assigned_at_base: Vec::default(),
             path_moved_at_base: Vec::default(),
             path_accessed_at_base: Vec::default(),
-            known_subset: Vec::default(),
+            known_placeholder_subset: Vec::default(),
             placeholder: Vec::default(),
         }
     }

@@ -49,7 +49,7 @@ pub(crate) fn load_tab_delimited_facts(
             path_assigned_at_base,
             path_moved_at_base,
             path_accessed_at_base,
-            known_subset,
+            known_placeholder_subset,
             placeholder,
         }
     }

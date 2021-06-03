@@ -17,14 +17,19 @@ use crate::output::{Context, Output};
 pub(super) fn compute<T: FactTypes>(
     ctx: &Context<'_, T>,
     result: &mut Output<T>,
-) -> Relation<(T::Loan, T::Point)> {
+) -> (
+    Relation<(T::Loan, T::Point)>,
+    Relation<(T::Origin, T::Origin, T::Point)>,
+) {
     let timer = Instant::now();
 
-    let errors = {
+    let (errors, subset_errors) = {
         // Static inputs
         let origin_live_on_entry_rel = &ctx.origin_live_on_entry;
         let cfg_edge_rel = &ctx.cfg_edge;
         let loan_killed_at = &ctx.loan_killed_at;
+        let known_placeholder_subset = &ctx.known_placeholder_subset;
+        let placeholder_origin = &ctx.placeholder_origin;
 
         // Create a new iteration context, ...
         let mut iteration = Iteration::new();
@@ -127,6 +132,11 @@ pub(super) fn compute<T: FactTypes>(
 
         // .decl errors(loan, point)
         let errors = iteration.variable("errors");
+        let subset_errors = iteration.variable::<(T::Origin, T::Origin, T::Point)>("subset_errors");
+
+        let subset_placeholder =
+            iteration.variable::<(T::Origin, T::Origin, T::Point)>("subset_placeholder");
+        let subset_placeholder_o2p = iteration.variable_indistinct("subset_placeholder_o2p");
 
         // Make "variable" versions of the relations, needed for joins.
         loan_issued_at_op.extend(
@@ -176,6 +186,15 @@ pub(super) fn compute<T: FactTypes>(
                 .borrow_mut()
                 .elements
                 .retain(|&((origin1, _), origin2)| origin1 != origin2);
+
+            subset_placeholder
+                .recent
+                .borrow_mut()
+                .elements
+                .retain(|&(origin1, origin2, _)| origin1 != origin2);
+            subset_placeholder_o2p.from_map(&subset_placeholder, |&(origin1, origin2, point)| {
+                ((origin2, point), origin1)
+            });
 
             // live_to_dying_regions(origin1, origin2, point1, point2) :-
             //   subset(origin1, origin2, point1),
@@ -378,6 +397,48 @@ pub(super) fn compute<T: FactTypes>(
                 &loan_live_at,
                 |&(loan, point), _, _| (loan, point),
             );
+
+            // subset_placeholder(Origin1, Origin2, Point) :-
+            //     subset(Origin1, Origin2, Point),
+            //     placeholder_origin(Origin1).
+            subset_placeholder.from_leapjoin(
+                &subset_o1p,
+                (
+                    placeholder_origin.extend_with(|&((origin1, _point), _origin2)| origin1),
+                    // remove symmetries:
+                    datafrog::ValueFilter::from(|&((origin1, _point), origin2), _| {
+                        origin1 != origin2
+                    }),
+                ),
+                |&((origin1, point), origin2), _| (origin1, origin2, point),
+            );
+
+            // subset_placeholder(Origin1, Origin3, Point) :-
+            //     subset_placeholder(Origin1, Origin2, Point),
+            //     subset(Origin2, Origin3, Point).
+            subset_placeholder.from_join(
+                &subset_placeholder_o2p,
+                &subset_o1p,
+                |&(_origin2, point), &origin1, &origin3| (origin1, origin3, point),
+            );
+
+            // subset_error(Origin1, Origin2, Point) :-
+            //     subset_placeholder(Origin1, Origin2, Point),
+            //     placeholder_origin(Origin2),
+            //     !known_placeholder_subset(Origin1, Origin2).
+            subset_errors.from_leapjoin(
+                &subset_placeholder,
+                (
+                    placeholder_origin.extend_with(|&(_origin1, origin2, _point)| origin2),
+                    known_placeholder_subset
+                        .filter_anti(|&(origin1, origin2, _point)| (origin1, origin2)),
+                    // remove symmetries:
+                    datafrog::ValueFilter::from(|&(origin1, origin2, _point), _| {
+                        origin1 != origin2
+                    }),
+                ),
+                |&(origin1, origin2, point), _| (origin1, origin2, point),
+            );
         }
 
         if result.dump_enabled {
@@ -417,14 +478,15 @@ pub(super) fn compute<T: FactTypes>(
             }
         }
 
-        errors.complete()
+        (errors.complete(), subset_errors.complete())
     };
 
     info!(
-        "errors is complete: {} tuples, {:?}",
+        "analysis done: {} `errors` tuples, {} `subset_errors` tuples, {:?}",
         errors.len(),
+        subset_errors.len(),
         timer.elapsed()
     );
 
-    errors
+    (errors, subset_errors)
 }
